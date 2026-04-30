@@ -261,18 +261,14 @@ export const useStore = create<Store>((set, get) => ({
       }],
     };
   }),
-  approvePartRequest: (id) => set((s) => ({
-    partRequests: s.partRequests.map(r => {
-      if (r.id !== id) return r;
-      // Convert to usage
-      get().usages.push({ productId: r.productId, qty: r.requestedQty, jobRef: r.jobRef });
-      return { ...r, status: "Approved" };
-    }),
-    usages: [...s.usages, (() => {
-      const r = s.partRequests.find(x => x.id === id)!;
-      return { productId: r.productId, qty: r.requestedQty, jobRef: r.jobRef };
-    })()],
-  })),
+  approvePartRequest: (id) => set((s) => {
+    const r = s.partRequests.find(x => x.id === id);
+    if (!r) return s;
+    return {
+      partRequests: s.partRequests.map(x => x.id === id ? { ...x, status: "Approved" as const } : x),
+      usages: [...s.usages, { productId: r.productId, qty: r.requestedQty, jobRef: r.jobRef }],
+    };
+  }),
   rejectPartRequest: (id) => set((s) => ({
     partRequests: s.partRequests.map(r => r.id === id ? { ...r, status: "Rejected" } : r),
   })),
