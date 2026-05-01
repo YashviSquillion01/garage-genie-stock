@@ -12,12 +12,8 @@ import { Plus, Check, X, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 
 export default function PartRequests() {
-  const { partRequests, products, suppliers, addPartRequest, approvePartRequest, rejectPartRequest, getStock, addPO } = useStore();
-  const [createOpen, setCreateOpen] = useState(false);
+  const { partRequests, products, suppliers, approvePartRequest, rejectPartRequest, getStock, addPO } = useStore();
   const [poRequestId, setPoRequestId] = useState<string | null>(null);
-
-  const empty = { technician: "", jobRef: "", productId: "", requestedQty: 0, remarks: "" };
-  const [form, setForm] = useState(empty);
 
   const [poForm, setPoForm] = useState({ supplierId: "", price: 0 });
 
@@ -25,21 +21,11 @@ export default function PartRequests() {
   const activeProduct = activeRequest ? products.find(p => p.id === activeRequest.productId) : null;
   const remainingQty = activeRequest && activeProduct ? Math.max(0, activeRequest.requestedQty - getStock(activeProduct.id)) : 0;
 
-  const submitRequest = () => {
-    if (!form.technician || !form.productId || form.requestedQty <= 0) return;
-    addPartRequest(form);
-    toast.success("Part request submitted");
-    setCreateOpen(false);
-    setForm(empty);
-  };
-
   const submitInlinePO = () => {
     if (!activeRequest || !activeProduct || !poForm.supplierId) return;
     const id = addPO({
       supplierId: poForm.supplierId,
-      productId: activeProduct.id,
-      qty: remainingQty,
-      totalPrice: poForm.price * remainingQty,
+      items: [{ productId: activeProduct.id, qty: remainingQty, price: poForm.price }],
       jobRef: activeRequest.jobRef,
     });
     toast.success(`${id} raised for ${remainingQty} units`);

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useStore } from "@/store/inventory";
+import { useStore, type PurchaseOrder, type POItem } from "@/store/inventory";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,54 +7,76 @@ import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/PageHeader";
-import { Plus, PackageCheck, Search } from "lucide-react";
+import { Plus, PackageCheck, Search, Eye, Trash2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+
+type Draft = { productId: string; qty: number; price: number };
 
 export default function PurchaseOrders() {
   const { pos, suppliers, products, addPO, recordDelivery } = useStore();
   const [createOpen, setCreateOpen] = useState(false);
-  const [deliveryPoId, setDeliveryPoId] = useState<string | null>(null);
+  const [delivery, setDelivery] = useState<{ poId: string; productId: string } | null>(null);
+  const [viewItem, setViewItem] = useState<{ poId: string; productId: string } | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
-  const [form, setForm] = useState({ supplierId: "", productId: "", qty: 0, totalPrice: 0 });
-  const [delivery, setDelivery] = useState({ qty: 0, price: 0 });
+  // Create form
+  const [supplierId, setSupplierId] = useState("");
+  const [drafts, setDrafts] = useState<Draft[]>([{ productId: "", qty: 0, price: 0 }]);
+
+  // Delivery form
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [delForm, setDelForm] = useState({ qty: 0, price: 0, date: todayStr });
 
   const filtered = pos.filter(po => {
     const sup = suppliers.find(s => s.id === po.supplierId)?.name || "";
-    const prod = products.find(p => p.id === po.productId)?.name || "";
-    const matchSearch = `${po.id} ${sup} ${prod}`.toLowerCase().includes(search.toLowerCase());
+    const itemNames = po.items.map(i => products.find(p => p.id === i.productId)?.name || "").join(" ");
+    const match = `${po.id} ${sup} ${itemNames}`.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === "all" || po.status === statusFilter;
-    return matchSearch && matchStatus;
+    return match && matchStatus;
   }).sort((a, b) => b.id.localeCompare(a.id));
 
+  const addDraftRow = () => setDrafts([...drafts, { productId: "", qty: 0, price: 0 }]);
+  const removeDraftRow = (i: number) => setDrafts(drafts.filter((_, idx) => idx !== i));
+  const updateDraft = (i: number, patch: Partial<Draft>) => setDrafts(drafts.map((d, idx) => idx === i ? { ...d, ...patch } : d));
+
+  const draftTotal = drafts.reduce((s, d) => s + (d.qty || 0) * (d.price || 0), 0);
+
   const submitPO = () => {
-    if (!form.supplierId || !form.productId || form.qty <= 0) return;
-    const id = addPO(form);
-    toast.success(`${id} created`);
+    const valid = drafts.filter(d => d.productId && d.qty > 0 && d.price > 0);
+    if (!supplierId || valid.length === 0) return;
+    const id = addPO({ supplierId, items: valid });
+    toast.success(`${id} created with ${valid.length} item${valid.length > 1 ? "s" : ""}`);
     setCreateOpen(false);
-    setForm({ supplierId: "", productId: "", qty: 0, totalPrice: 0 });
+    setSupplierId("");
+    setDrafts([{ productId: "", qty: 0, price: 0 }]);
   };
 
-  const activePO = deliveryPoId ? pos.find(po => po.id === deliveryPoId) : null;
-  const remaining = activePO ? activePO.qty - activePO.receivedQty : 0;
+  const activePO = delivery ? pos.find(p => p.id === delivery.poId) : null;
+  const activeItem = activePO && delivery ? activePO.items.find(i => i.productId === delivery.productId) : null;
+  const activeProduct = activeItem ? products.find(p => p.id === activeItem.productId) : null;
+  const remaining = activeItem ? activeItem.qty - activeItem.receivedQty : 0;
+  const isFullyDelivered = activeItem ? remaining <= 0 : false;
+
+  const openDelivery = (poId: string, productId: string) => {
+    const po = pos.find(p => p.id === poId)!;
+    const it = po.items.find(i => i.productId === productId)!;
+    const rem = it.qty - it.receivedQty;
+    setDelForm({ qty: rem, price: Math.round(rem * it.price), date: todayStr });
+    setDelivery({ poId, productId });
+  };
 
   const submitDelivery = () => {
-    if (!activePO) return;
-    if (delivery.qty <= 0 || delivery.qty > remaining) return;
-    recordDelivery(activePO.id, delivery.qty, delivery.price);
-    toast.success(`Delivery recorded for ${activePO.id}`);
-    setDeliveryPoId(null);
-    setDelivery({ qty: 0, price: 0 });
+    if (!delivery || !activeItem) return;
+    if (delForm.qty <= 0 || delForm.qty > remaining || !delForm.date) return;
+    recordDelivery(delivery.poId, delivery.productId, delForm.qty, delForm.price, delForm.date);
+    toast.success(`Delivery recorded`);
+    setDelivery(null);
   };
 
-  const openDelivery = (poId: string) => {
-    const po = pos.find(p => p.id === poId)!;
-    const rem = po.qty - po.receivedQty;
-    const unitPrice = po.totalPrice / po.qty;
-    setDelivery({ qty: rem, price: Math.round(rem * unitPrice) });
-    setDeliveryPoId(poId);
-  };
+  const viewPO = viewItem ? pos.find(p => p.id === viewItem.poId) : null;
+  const viewIt = viewPO && viewItem ? viewPO.items.find(i => i.productId === viewItem.productId) : null;
+  const viewProd = viewIt ? products.find(p => p.id === viewIt.productId) : null;
 
   const statusBadge = (s: string) => {
     const map: Record<string, string> = {
@@ -65,11 +87,17 @@ export default function PurchaseOrders() {
     return <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${map[s]}`}>{s}</span>;
   };
 
+  const itemStatus = (it: POItem) => {
+    if (it.receivedQty === 0) return "Pending";
+    if (it.receivedQty >= it.qty) return "Delivered";
+    return "Partial";
+  };
+
   return (
     <div>
       <PageHeader
         title="Purchase Orders"
-        description="Raise POs to suppliers and track deliveries with partial fulfillment."
+        description="Multi-item POs with partial deliveries, mandatory delivery dates and full history."
         action={<Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-1" /> New PO</Button>}
       />
 
@@ -97,37 +125,44 @@ export default function PurchaseOrders() {
                 <th className="px-4 py-3 font-medium">PO ID</th>
                 <th className="px-4 py-3 font-medium">Supplier</th>
                 <th className="px-4 py-3 font-medium">Product</th>
-                <th className="px-4 py-3 font-medium text-right">Ordered</th>
+                <th className="px-4 py-3 font-medium">OEM</th>
+                <th className="px-4 py-3 font-medium text-right">Qty</th>
                 <th className="px-4 py-3 font-medium text-right">Received</th>
-                <th className="px-4 py-3 font-medium text-right">Total</th>
+                <th className="px-4 py-3 font-medium text-right">Row Total</th>
                 <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium text-right">Action</th>
+                <th className="px-4 py-3 font-medium text-right w-44">Action</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map(po => {
+              {filtered.flatMap(po => {
                 const sup = suppliers.find(s => s.id === po.supplierId);
-                const prod = products.find(p => p.id === po.productId);
-                return (
-                  <tr key={po.id} className="border-b last:border-0 table-row-hover">
-                    <td className="px-4 py-3 font-mono text-xs">{po.id}</td>
-                    <td className="px-4 py-3 font-medium">{sup?.name}</td>
-                    <td className="px-4 py-3">{prod?.name}</td>
-                    <td className="px-4 py-3 text-right">{po.qty}</td>
-                    <td className="px-4 py-3 text-right">{po.receivedQty}</td>
-                    <td className="px-4 py-3 text-right">₹{po.totalPrice.toLocaleString("en-IN")}</td>
-                    <td className="px-4 py-3">{statusBadge(po.status)}</td>
-                    <td className="px-4 py-3 text-right">
-                      {po.status !== "Delivered" ? (
-                        <Button size="sm" variant="outline" onClick={() => openDelivery(po.id)}>
-                          <PackageCheck className="h-3.5 w-3.5 mr-1" /> Mark as Delivered
-                        </Button>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Completed</span>
-                      )}
-                    </td>
-                  </tr>
-                );
+                return po.items.map((it, idx) => {
+                  const prod = products.find(p => p.id === it.productId);
+                  const fullDelivered = it.receivedQty >= it.qty;
+                  return (
+                    <tr key={`${po.id}-${it.productId}`} className="border-b last:border-0 table-row-hover">
+                      <td className="px-4 py-3 font-mono text-xs">{idx === 0 ? po.id : ""}</td>
+                      <td className="px-4 py-3">{idx === 0 ? <span className="font-medium">{sup?.name}</span> : ""}</td>
+                      <td className="px-4 py-3">{prod?.name}</td>
+                      <td className="px-4 py-3 text-muted-foreground text-xs">{prod?.oem}</td>
+                      <td className="px-4 py-3 text-right">{it.qty}</td>
+                      <td className="px-4 py-3 text-right">{it.receivedQty}</td>
+                      <td className="px-4 py-3 text-right">₹{(it.qty * it.price).toLocaleString("en-IN")}</td>
+                      <td className="px-4 py-3">{statusBadge(itemStatus(it))}</td>
+                      <td className="px-4 py-3 text-right">
+                        {fullDelivered ? (
+                          <Button size="sm" variant="ghost" onClick={() => setViewItem({ poId: po.id, productId: it.productId })}>
+                            <Eye className="h-3.5 w-3.5 mr-1" /> View
+                          </Button>
+                        ) : (
+                          <Button size="sm" variant="outline" onClick={() => openDelivery(po.id, it.productId)}>
+                            <PackageCheck className="h-3.5 w-3.5 mr-1" /> Mark Delivered
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                });
               })}
             </tbody>
           </table>
@@ -136,74 +171,115 @@ export default function PurchaseOrders() {
 
       {/* Create PO Drawer */}
       <Sheet open={createOpen} onOpenChange={setCreateOpen}>
-        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
           <SheetHeader>
             <SheetTitle>New Purchase Order</SheetTitle>
+            <SheetDescription>Add multiple items. OEM is auto-filled from the product.</SheetDescription>
           </SheetHeader>
-          <div className="mt-6 space-y-4">
+          <div className="mt-6 space-y-5">
             <div>
               <Label>Supplier</Label>
-              <Select value={form.supplierId} onValueChange={v => setForm({ ...form, supplierId: v })}>
+              <Select value={supplierId} onValueChange={setSupplierId}>
                 <SelectTrigger className="mt-1.5"><SelectValue placeholder="Select supplier" /></SelectTrigger>
                 <SelectContent>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
+
             <div>
-              <Label>Product</Label>
-              <Select value={form.productId} onValueChange={v => {
-                const p = products.find(x => x.id === v);
-                setForm({ ...form, productId: v, totalPrice: p ? p.price * form.qty : form.totalPrice });
-              }}>
-                <SelectTrigger className="mt-1.5"><SelectValue placeholder="Select product" /></SelectTrigger>
-                <SelectContent>{products.map(p => <SelectItem key={p.id} value={p.id}>{p.name} · {p.sku}</SelectItem>)}</SelectContent>
-              </Select>
+              <div className="flex items-center justify-between mb-2">
+                <Label>Items</Label>
+                <Button type="button" size="sm" variant="outline" onClick={addDraftRow}>
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Row
+                </Button>
+              </div>
+              <div className="rounded-lg border overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-muted/40 text-xs text-muted-foreground">
+                      <th className="px-3 py-2 text-left font-medium">Product</th>
+                      <th className="px-3 py-2 text-left font-medium">OEM</th>
+                      <th className="px-3 py-2 text-right font-medium w-20">Qty</th>
+                      <th className="px-3 py-2 text-right font-medium w-24">Price</th>
+                      <th className="px-3 py-2 text-right font-medium w-24">Total</th>
+                      <th className="w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {drafts.map((d, i) => {
+                      const prod = products.find(p => p.id === d.productId);
+                      return (
+                        <tr key={i} className="border-t">
+                          <td className="px-2 py-2">
+                            <Select value={d.productId} onValueChange={v => {
+                              const p = products.find(x => x.id === v);
+                              updateDraft(i, { productId: v, price: d.price || (p?.price ?? 0) });
+                            }}>
+                              <SelectTrigger className="h-9"><SelectValue placeholder="Select" /></SelectTrigger>
+                              <SelectContent>{products.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                            </Select>
+                          </td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground">{prod?.oem || "—"}</td>
+                          <td className="px-2 py-2"><Input type="number" className="h-9 text-right" value={d.qty || ""} onChange={e => updateDraft(i, { qty: +e.target.value })} /></td>
+                          <td className="px-2 py-2"><Input type="number" className="h-9 text-right" value={d.price || ""} onChange={e => updateDraft(i, { price: +e.target.value })} /></td>
+                          <td className="px-3 py-2 text-right text-xs">₹{((d.qty || 0) * (d.price || 0)).toLocaleString("en-IN")}</td>
+                          <td className="px-2 py-2">
+                            {drafts.length > 1 && (
+                              <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" onClick={() => removeDraftRow(i)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-muted/30 border-t">
+                      <td colSpan={4} className="px-3 py-2 text-right text-xs font-medium">Grand Total</td>
+                      <td className="px-3 py-2 text-right font-semibold">₹{draftTotal.toLocaleString("en-IN")}</td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </div>
-            <div>
-              <Label>Quantity</Label>
-              <Input type="number" className="mt-1.5" value={form.qty || ""} onChange={e => {
-                const qty = +e.target.value;
-                const p = products.find(x => x.id === form.productId);
-                setForm({ ...form, qty, totalPrice: p ? p.price * qty : form.totalPrice });
-              }} />
-            </div>
-            <div>
-              <Label>Total Price (₹)</Label>
-              <Input type="number" className="mt-1.5" value={form.totalPrice || ""} onChange={e => setForm({ ...form, totalPrice: +e.target.value })} />
-            </div>
-            <Button className="w-full" onClick={submitPO}>Create PO</Button>
+
+            <Button className="w-full" onClick={submitPO} disabled={!supplierId || drafts.every(d => !d.productId || d.qty <= 0)}>
+              Create Purchase Order
+            </Button>
           </div>
         </SheetContent>
       </Sheet>
 
       {/* Delivery Drawer */}
-      <Sheet open={!!deliveryPoId} onOpenChange={(o) => !o && setDeliveryPoId(null)}>
+      <Sheet open={!!delivery} onOpenChange={(o) => !o && setDelivery(null)}>
         <SheetContent className="w-full sm:max-w-md overflow-y-auto">
           <SheetHeader>
-            <SheetTitle>Record Delivery</SheetTitle>
-            <SheetDescription>{activePO?.id} · {products.find(p => p.id === activePO?.productId)?.name}</SheetDescription>
+            <SheetTitle>{isFullyDelivered ? "Delivery Complete" : "Record Delivery"}</SheetTitle>
+            <SheetDescription>{activePO?.id} · {activeProduct?.name}</SheetDescription>
           </SheetHeader>
-          {activePO && (
+          {activeItem && activeProduct && (
             <div className="mt-6 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-2">
                 <div className="rounded-lg border p-3 bg-muted/40">
-                  <div className="text-xs text-muted-foreground">Ordered Qty</div>
-                  <div className="text-xl font-semibold mt-1">{activePO.qty}</div>
+                  <div className="text-[11px] text-muted-foreground">Ordered</div>
+                  <div className="text-lg font-semibold mt-0.5">{activeItem.qty}</div>
                 </div>
                 <div className="rounded-lg border p-3 bg-muted/40">
-                  <div className="text-xs text-muted-foreground">Already Received</div>
-                  <div className="text-xl font-semibold mt-1">{activePO.receivedQty}</div>
+                  <div className="text-[11px] text-muted-foreground">Received</div>
+                  <div className="text-lg font-semibold mt-0.5">{activeItem.receivedQty}</div>
                 </div>
-              </div>
-              <div className="rounded-lg border p-3 bg-info-soft/40">
-                <div className="text-xs text-muted-foreground">Remaining Qty</div>
-                <div className="text-xl font-semibold mt-1 text-info">{remaining}</div>
+                <div className="rounded-lg border p-3 bg-info-soft/40">
+                  <div className="text-[11px] text-muted-foreground">Remaining</div>
+                  <div className="text-lg font-semibold mt-0.5 text-info">{remaining}</div>
+                </div>
               </div>
 
-              {activePO.deliveries.length > 0 && (
+              {activeItem.deliveries.length > 0 && (
                 <div className="rounded-lg border">
                   <div className="px-3 py-2 text-xs font-medium border-b bg-muted/40">Delivery History</div>
                   <div className="divide-y">
-                    {activePO.deliveries.map((d, i) => (
+                    {activeItem.deliveries.map((d, i) => (
                       <div key={i} className="flex justify-between px-3 py-2 text-xs">
                         <span className="text-muted-foreground">{d.date}</span>
                         <span>{d.qty} units · ₹{d.price.toLocaleString("en-IN")}</span>
@@ -213,29 +289,85 @@ export default function PurchaseOrders() {
                 </div>
               )}
 
-              <div>
-                <Label>Delivery Quantity (≤ {remaining})</Label>
-                <Input
-                  type="number"
-                  max={remaining}
-                  className="mt-1.5"
-                  value={delivery.qty || ""}
-                  onChange={e => setDelivery({ ...delivery, qty: Math.min(+e.target.value, remaining) })}
-                />
+              {isFullyDelivered ? (
+                <div className="rounded-lg border bg-success-soft/40 p-4 text-center">
+                  <CheckCircle2 className="h-6 w-6 text-success mx-auto mb-2" />
+                  <div className="text-sm font-medium text-success">Fully received — nothing left to deliver</div>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <Label>Delivery Quantity (≤ {remaining})</Label>
+                    <Input type="number" max={remaining} className="mt-1.5"
+                      value={delForm.qty || ""}
+                      onChange={e => setDelForm({ ...delForm, qty: Math.min(+e.target.value, remaining) })} />
+                  </div>
+                  <div>
+                    <Label>Delivery Price (₹)</Label>
+                    <Input type="number" className="mt-1.5"
+                      value={delForm.price || ""}
+                      onChange={e => setDelForm({ ...delForm, price: +e.target.value })} />
+                  </div>
+                  <div>
+                    <Label>Delivery Date <span className="text-destructive">*</span></Label>
+                    <Input type="date" className="mt-1.5"
+                      value={delForm.date}
+                      onChange={e => setDelForm({ ...delForm, date: e.target.value })} required />
+                    <p className="text-xs text-muted-foreground mt-1.5">Mandatory — partial deliveries supported.</p>
+                  </div>
+                  <Button className="w-full" onClick={submitDelivery}
+                    disabled={delForm.qty <= 0 || delForm.qty > remaining || !delForm.date}>
+                    Record Delivery
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* View Delivery History */}
+      <Sheet open={!!viewItem} onOpenChange={(o) => !o && setViewItem(null)}>
+        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>Delivery History</SheetTitle>
+            <SheetDescription>{viewPO?.id} · {viewProd?.name}</SheetDescription>
+          </SheetHeader>
+          {viewIt && (
+            <div className="mt-6 space-y-4">
+              <div className="rounded-lg border bg-success-soft/40 p-3 flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-success" />
+                <div className="text-sm font-medium text-success">Fully Delivered</div>
               </div>
-              <div>
-                <Label>Delivery Price (₹)</Label>
-                <Input
-                  type="number"
-                  className="mt-1.5"
-                  value={delivery.price || ""}
-                  onChange={e => setDelivery({ ...delivery, price: +e.target.value })}
-                />
-                <p className="text-xs text-muted-foreground mt-1.5">Partial deliveries allow custom price for delivered batch.</p>
+              <div className="rounded-lg border overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/40 text-xs text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">Date</th>
+                      <th className="px-3 py-2 text-right font-medium">Quantity</th>
+                      <th className="px-3 py-2 text-right font-medium">Price</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewIt.deliveries.map((d, i) => (
+                      <tr key={i} className="border-t">
+                        <td className="px-3 py-2 text-xs">{d.date}</td>
+                        <td className="px-3 py-2 text-right">{d.qty}</td>
+                        <td className="px-3 py-2 text-right">₹{d.price.toLocaleString("en-IN")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-muted/30 border-t">
+                      <td className="px-3 py-2 text-xs font-medium">Total</td>
+                      <td className="px-3 py-2 text-right font-semibold">{viewIt.receivedQty}</td>
+                      <td className="px-3 py-2 text-right font-semibold">
+                        ₹{viewIt.deliveries.reduce((s, d) => s + d.price, 0).toLocaleString("en-IN")}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
-              <Button className="w-full" onClick={submitDelivery} disabled={delivery.qty <= 0 || delivery.qty > remaining}>
-                Record Delivery
-              </Button>
             </div>
           )}
         </SheetContent>
