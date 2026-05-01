@@ -79,7 +79,7 @@ export default function Reconciliation() {
               {rows.map(r => {
                 const mismatch = r.lastRecon && r.lastRecon.difference !== 0;
                 return (
-                  <tr key={r.poId} className="border-b last:border-0 table-row-hover">
+                  <tr key={r.key} className="border-b last:border-0 table-row-hover">
                     <td className="px-4 py-3 font-mono text-xs">{r.poId}</td>
                     <td className="px-4 py-3">{r.supplier}</td>
                     <td className="px-4 py-3 font-medium">{r.product}</td>
