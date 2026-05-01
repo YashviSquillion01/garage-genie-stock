@@ -297,6 +297,13 @@ export default function PurchaseOrders() {
               ) : (
                 <>
                   <div>
+                    <Label>Delivery Date <span className="text-destructive">*</span></Label>
+                    <Input type="date" className="mt-1.5"
+                      value={delForm.date}
+                      onChange={e => setDelForm({ ...delForm, date: e.target.value })} required />
+                    <p className="text-xs text-muted-foreground mt-1.5">Mandatory — must be set before recording.</p>
+                  </div>
+                  <div>
                     <Label>Delivery Quantity (≤ {remaining})</Label>
                     <Input type="number" max={remaining} className="mt-1.5"
                       value={delForm.qty || ""}
@@ -307,13 +314,7 @@ export default function PurchaseOrders() {
                     <Input type="number" className="mt-1.5"
                       value={delForm.price || ""}
                       onChange={e => setDelForm({ ...delForm, price: +e.target.value })} />
-                  </div>
-                  <div>
-                    <Label>Delivery Date <span className="text-destructive">*</span></Label>
-                    <Input type="date" className="mt-1.5"
-                      value={delForm.date}
-                      onChange={e => setDelForm({ ...delForm, date: e.target.value })} required />
-                    <p className="text-xs text-muted-foreground mt-1.5">Mandatory — partial deliveries supported.</p>
+                    <p className="text-xs text-muted-foreground mt-1.5">Partial pricing supported per batch.</p>
                   </div>
                   <Button className="w-full" onClick={submitDelivery}
                     disabled={delForm.qty <= 0 || delForm.qty > remaining || !delForm.date}>
