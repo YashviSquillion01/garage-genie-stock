@@ -17,26 +17,29 @@ export default function Reconciliation() {
   const [productId, setProductId] = useState("");
   const [physical, setPhysical] = useState<number | "">("");
 
-  // Build single-table view: one row per PO line, but stock is product-level
-  const rows = pos.map(po => {
-    const prod = products.find(p => p.id === po.productId)!;
+  // Build single-table view: one row per PO line item
+  const rows = pos.flatMap(po => {
     const sup = suppliers.find(s => s.id === po.supplierId)!;
-    const productStock = getStock(prod.id);
-    const productUsed = getUsed(prod.id);
-    const productReceived = getReceived(prod.id);
-    const lastRecon = [...reconciliations].reverse().find(r => r.productId === prod.id);
-    return {
-      poId: po.id,
-      supplier: sup.name,
-      product: prod.name,
-      productId: prod.id,
-      ordered: po.qty,
-      received: po.receivedQty,
-      productReceived,
-      used: productUsed,
-      stock: productStock,
-      lastRecon,
-    };
+    return po.items.map(it => {
+      const prod = products.find(p => p.id === it.productId)!;
+      const productStock = getStock(prod.id);
+      const productUsed = getUsed(prod.id);
+      const productReceived = getReceived(prod.id);
+      const lastRecon = [...reconciliations].reverse().find(r => r.productId === prod.id);
+      return {
+        key: `${po.id}-${prod.id}`,
+        poId: po.id,
+        supplier: sup.name,
+        product: prod.name,
+        productId: prod.id,
+        ordered: it.qty,
+        received: it.receivedQty,
+        productReceived,
+        used: productUsed,
+        stock: productStock,
+        lastRecon,
+      };
+    });
   }).sort((a, b) => b.poId.localeCompare(a.poId));
 
   const systemStock = productId ? getStock(productId) : 0;
@@ -76,7 +79,7 @@ export default function Reconciliation() {
               {rows.map(r => {
                 const mismatch = r.lastRecon && r.lastRecon.difference !== 0;
                 return (
-                  <tr key={r.poId} className="border-b last:border-0 table-row-hover">
+                  <tr key={r.key} className="border-b last:border-0 table-row-hover">
                     <td className="px-4 py-3 font-mono text-xs">{r.poId}</td>
                     <td className="px-4 py-3">{r.supplier}</td>
                     <td className="px-4 py-3 font-medium">{r.product}</td>

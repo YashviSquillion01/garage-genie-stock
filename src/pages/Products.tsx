@@ -19,8 +19,8 @@ export default function Products() {
   const empty = { name: "", oem: "", categoryId: "", unit: "Piece", price: 0, minStock: 0 };
   const [form, setForm] = useState(empty);
 
-  const previewSku = form.name && form.categoryId
-    ? generateSku(form.name, categories.find(c => c.id === form.categoryId)?.code || "", products.filter(p => p.id !== editingId))
+  const previewSku = form.name && form.oem && form.categoryId
+    ? generateSku(form.name, form.oem, categories.find(c => c.id === form.categoryId)?.code || "", products.filter(p => p.id !== editingId))
     : "";
 
   const filtered = products.filter(p => {

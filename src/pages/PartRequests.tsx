@@ -6,18 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/PageHeader";
-import { Plus, Check, X, ShoppingCart } from "lucide-react";
+import { Check, X, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 
 export default function PartRequests() {
-  const { partRequests, products, suppliers, addPartRequest, approvePartRequest, rejectPartRequest, getStock, addPO } = useStore();
-  const [createOpen, setCreateOpen] = useState(false);
+  const { partRequests, products, suppliers, approvePartRequest, rejectPartRequest, getStock, addPO } = useStore();
   const [poRequestId, setPoRequestId] = useState<string | null>(null);
-
-  const empty = { technician: "", jobRef: "", productId: "", requestedQty: 0, remarks: "" };
-  const [form, setForm] = useState(empty);
 
   const [poForm, setPoForm] = useState({ supplierId: "", price: 0 });
 
@@ -25,21 +20,11 @@ export default function PartRequests() {
   const activeProduct = activeRequest ? products.find(p => p.id === activeRequest.productId) : null;
   const remainingQty = activeRequest && activeProduct ? Math.max(0, activeRequest.requestedQty - getStock(activeProduct.id)) : 0;
 
-  const submitRequest = () => {
-    if (!form.technician || !form.productId || form.requestedQty <= 0) return;
-    addPartRequest(form);
-    toast.success("Part request submitted");
-    setCreateOpen(false);
-    setForm(empty);
-  };
-
   const submitInlinePO = () => {
     if (!activeRequest || !activeProduct || !poForm.supplierId) return;
     const id = addPO({
       supplierId: poForm.supplierId,
-      productId: activeProduct.id,
-      qty: remainingQty,
-      totalPrice: poForm.price * remainingQty,
+      items: [{ productId: activeProduct.id, qty: remainingQty, price: poForm.price }],
       jobRef: activeRequest.jobRef,
     });
     toast.success(`${id} raised for ${remainingQty} units`);
@@ -62,7 +47,6 @@ export default function PartRequests() {
       <PageHeader
         title="Part Requests"
         description="Technician part requests against active jobs. Approve from stock or raise inline POs."
-        action={<Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-1" /> New Request</Button>}
       />
 
       <Card>
@@ -128,26 +112,7 @@ export default function PartRequests() {
         </div>
       </Card>
 
-      {/* New Request */}
-      <Sheet open={createOpen} onOpenChange={setCreateOpen}>
-        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
-          <SheetHeader><SheetTitle>New Part Request</SheetTitle></SheetHeader>
-          <div className="mt-6 space-y-4">
-            <div><Label>Technician Name</Label><Input className="mt-1.5" value={form.technician} onChange={e => setForm({ ...form, technician: e.target.value })} /></div>
-            <div><Label>Job Reference</Label><Input className="mt-1.5" value={form.jobRef} onChange={e => setForm({ ...form, jobRef: e.target.value })} placeholder="JOB-XXXX" /></div>
-            <div>
-              <Label>Product</Label>
-              <Select value={form.productId} onValueChange={v => setForm({ ...form, productId: v })}>
-                <SelectTrigger className="mt-1.5"><SelectValue placeholder="Select product" /></SelectTrigger>
-                <SelectContent>{products.map(p => <SelectItem key={p.id} value={p.id}>{p.name} · Stock: {getStock(p.id)}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div><Label>Requested Qty</Label><Input type="number" className="mt-1.5" value={form.requestedQty || ""} onChange={e => setForm({ ...form, requestedQty: +e.target.value })} /></div>
-            <div><Label>Remarks</Label><Textarea className="mt-1.5" value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} /></div>
-            <Button className="w-full" onClick={submitRequest}>Submit Request</Button>
-          </div>
-        </SheetContent>
-      </Sheet>
+      {/* New Request drawer removed per spec — requests originate from active job cards. */}
 
       {/* Inline Smart PO */}
       <Sheet open={!!poRequestId} onOpenChange={(o) => !o && setPoRequestId(null)}>
